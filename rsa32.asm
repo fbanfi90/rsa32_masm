@@ -1,4 +1,16 @@
-TITLE RSA in MASM - Copyright (C) Fabio Banfi 2013
+TITLE RSA in MASM - Copyright (C) Fabio Banfi 2013-2026
+
+; HOW TO RUN:
+;
+; First open the x86 Native Tools Command Prompt (requires installing x86/64 build tools from Visual Studio Installer):
+; cmd.exe /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars32.bat"
+;
+; Then, compile and link:
+; ml /c /coff rsa32.asm
+; link rsa32.obj kernel32.lib user32.lib msvcrt.lib /SUBSYSTEM:WINDOWS
+;
+; Or, minimally:
+; ml /c rsa32.asm && link rsa32 /SUBSYSTEM:WINDOWS
 
 .686P
 .MODEL FLAT, STDCALL
@@ -10,10 +22,12 @@ INCLUDELIB msvcrt
 
 ExitProcess PROTO STDCALL :DWORD
 MessageBoxA PROTO STDCALL :DWORD, :DWORD, :DWORD, :DWORD
-EXTERNDEF _imp___itoa:PTR
+EXTERN wsprintfA:PROC
+
 
 .DATA
 rsa_sz_title DB "RSA", 0                    ; The MessageBox title.
+rsa_sz_fmt db "%d",0                        ; Format string for wsprintfA
 
 .DATA?
 rsa_sz_text DB 32 DUP (?)                   ; The MessageBox message.
@@ -35,12 +49,12 @@ start:
         push    eax                         ; Push encrypted value on the stack.
         call    rsa_decrypt                 ; Decrypt encrypted value.
         call    rsa_display_int             ; Display the decrypted value.
-        push    0                           ; Push rgument of ExitProcess on the stack.
+        push    0                           ; Push argument of ExitProcess on the stack.
         call    ExitProcess                 ; Exit program.
 
 ; Generate the public and private keys.
 rsa_init:
-        pushad                              ; Backup all general purpuse registers on the stack.
+        pushad                              ; Backup all general purpose registers on the stack.
 rsa_init_gen_p:
         rdtsc                               ; Get the cpu time stamp counter as random number.
         or      eax, 1                      ; Make sure eax is odd.
@@ -73,13 +87,13 @@ rsa_init_gen_q:
 rsa_init_x_ok:
         mov     [rsa_dw_d], eax             ; Save x to memory.
         mov     [rsa_dw_e], 65537           ; Save e to memory.
-        popad                               ; Restore all general purpuse registers from the stack.
+        popad                               ; Restore all general purpose registers from the stack.
         ret                                 ; Give control back to the caller.
 
 ; Clear the public and private keys.
 rsa_clear:
         mov     [rsa_dw_n], 0               ; Remove modulo n from memory.
-        mov     [rsa_dw_e], 0               ; Remove public exxponent e from memory.
+        mov     [rsa_dw_e], 0               ; Remove public exponent e from memory.
         mov     [rsa_dw_d], 0               ; Remove private exponent d from memory.
         ret                                 ; Give control back to the caller.
 
@@ -141,7 +155,7 @@ rsa_mod_exp_loop:
         div     esi                         ; Divide edx:eax (b * c) by esi (m) and put result in eax (b * c / m) and remainder in edx (b * c mod m).
         mov     edi, edx                    ; Copy c back to edi.
 rsa_mod_exp_skip:
-        shr     ecx, 1                      ; Divide expontnt e by 2, that is e := e >> 1.
+        shr     ecx, 1                      ; Divide exponent e by 2, that is e := e >> 1.
         mov     eax, ebx                    ; Move b to accumulator.
         mul     ebx                         ; Set extended register edx:eax to b * b (multiplication result may actually be more than 32 bit).
         div     esi                         ; Divide edx:eax (b * b) by esi (m) and put result in eax (b  *b / m) and remainder in edx (b * b mod m).
@@ -176,7 +190,7 @@ rsa_ext_euclid_end:
         pop     ecx                         ; Restore ecx from the stack.
         ret                                 ; Give control back to the caller.
 
-; Primality test for n odd and larger than 3 requires eax on stack, returs true of false in eax.
+; Primality test for n odd and larger than 3 requires eax on stack, returns true of false in eax.
 rsa_is_prime:
         push    ebx                         ; Backup ebx on the stack.
         push    ecx                         ; Backup ecx on the stack.
@@ -207,24 +221,21 @@ rsa_is_prime_end:
         pop     ebx                         ; Restore ebx from the stack.
         ret                                 ; Give control back to the caller.
         
-; Display content of eax as integer in messagebox.
+; Display content of eax as integer in a messagebox.
 rsa_display_int:
-        pushad                              ; Backup all general purpuse registers on the stack.
-        push    10                          ; Third argument of _imp___itoa: base 10.
-        lea     ebx, rsa_sz_text            ; Load address of MessageBox text on eax.
-        push    ebx                         ; Second argument of _imp___itoa: address of destination string.
-        push    eax                         ; First argument of _imp___itoa: number to be converted.                  
-        call    _imp___itoa                 ; Convert eax to its string representation.
-        add     esp, 12                     ; C calling convention, clean stack for _imp___itoa.
+        pushad                              ; Backup all general purpose registers on the stack.
+        push    eax                         ; Third argument of wsprintfA: number to be converted.
+        push    offset rsa_sz_fmt           ; Second argument of wsprintfA: format string "%d".
+        push    offset rsa_sz_text          ; First argument of wsprintfA: address of destination string.
+        call    wsprintfA                   ; Convert eax to its string representation.
+        add     esp, 12                     ; C calling convention, clean wsprintfA's stack.
         xor     eax, eax                    ; Set eax to 0.
         push    eax                         ; Push 0 as fourth argument of MessageBox on the stack.
-        lea     ebx, rsa_sz_title           ; Load address of rsa_sz_title on ebx.
-        push    ebx                         ; Push rsa_sz_title address as third argument of MessageBox on the stack.
-        lea     ebx, rsa_sz_text            ; Load address of rsa_sz_text on ebx.
-        push    ebx                         ; Push rsa_sz_text address as second argument of MessageBox on the stack.
+        push    offset rsa_sz_title         ; Push rsa_sz_title address as third argument of MessageBox on the stack.
+        push    offset rsa_sz_text          ; Push rsa_sz_text address as second argument of MessageBox on the stack.
         push    eax                         ; Push 0 as first argument of MessageBox on the stack.
         call    MessageBoxA                 ; Call window' MessageBox function.
-        popad                               ; Restore all general purpuse registers from the stack.
+        popad                               ; Restore all general purpose registers from the stack.
         ret                                 ; Give control back to the caller.
 
 END start
