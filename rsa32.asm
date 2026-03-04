@@ -82,9 +82,9 @@ rsa_init_gen_q:
         mov     ecx, eax                    ; Copy t to edi.
         call    rsa_ext_euclid              ; Set m = e in ebx, n = t in eax and get inverse multiplicative d of e in eax.
         cmp     eax, 0                      ; Check whether d > 0.
-        jg      rsa_init_x_ok               ; If d > 0 there is no need to make it positive.
+        jg      rsa_init_end                ; If d > 0 there is no need to make it positive.
         add     eax, ecx                    ; Make sure d is positive, hence d := d + t.
-rsa_init_x_ok:
+rsa_init_end:
         mov     [rsa_dw_d], eax             ; Save d to memory.
         mov     [rsa_dw_e], 65537           ; Save e to memory.
         popad                               ; Restore all general purpose registers from the stack.
@@ -245,5 +245,6 @@ rsa_display_int:
         ret                                 ; Give control back to the caller.
 
 END start
+
 
 
