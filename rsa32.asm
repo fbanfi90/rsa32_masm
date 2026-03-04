@@ -27,7 +27,7 @@ MessageBoxA PROTO STDCALL :DWORD, :DWORD, :DWORD, :DWORD
 
 .DATA
 rsa_sz_title DB "RSA", 0                    ; The MessageBox title.
-rsa_sz_fmt db "%d",0                        ; Format string for wsprintfA
+rsa_sz_fmt db "%d", 0                       ; Format string for wsprintfA
 
 .DATA?
 rsa_sz_text DB 32 DUP (?)                   ; The MessageBox message.
@@ -83,9 +83,9 @@ rsa_init_gen_q:
         call    rsa_ext_euclid              ; Set m = e in ebx, n = t in eax and get inverse multiplicative d of e in eax.
         cmp     eax, 0                      ; Check whether d > 0.
         jg      rsa_init_x_ok               ; If d > 0 there is no need to make it positive.
-        add     eax, ecx                    ; Make sure d is positive, hence d := x + t.
+        add     eax, ecx                    ; Make sure d is positive, hence d := d + t.
 rsa_init_x_ok:
-        mov     [rsa_dw_d], eax             ; Save x to memory.
+        mov     [rsa_dw_d], eax             ; Save d to memory.
         mov     [rsa_dw_e], 65537           ; Save e to memory.
         popad                               ; Restore all general purpose registers from the stack.
         ret                                 ; Give control back to the caller.
@@ -245,4 +245,5 @@ rsa_display_int:
         ret                                 ; Give control back to the caller.
 
 END start
+
 
