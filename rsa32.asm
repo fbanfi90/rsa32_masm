@@ -146,7 +146,7 @@ rsa_mod_exp:
         mov     edi, 1                      ; Set c := 1.
 rsa_mod_exp_loop:
         cmp     ecx, 0                      ; Compare e with 0.
-        jle     rsa_mod_exp_end             ; If e <= 0 return c.
+        jz      rsa_mod_exp_end             ; If e == 0 return c (treat exponent as unsigned).
         mov     edx, ecx                    ; Copy e to edx.
         and     edx, 1                      ; Set edx to e & 1.
         cmp     edx, 0                      ; Compare e with 0.
