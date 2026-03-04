@@ -20,10 +20,10 @@ INCLUDELIB kernel32
 INCLUDELIB user32
 INCLUDELIB msvcrt
 
-ExitProcess PROTO STDCALL :DWORD
-MessageBoxA PROTO STDCALL :DWORD, :DWORD, :DWORD, :DWORD
 EXTERN wsprintfA:PROC
 
+ExitProcess PROTO STDCALL :DWORD
+MessageBoxA PROTO STDCALL :DWORD, :DWORD, :DWORD, :DWORD
 
 .DATA
 rsa_sz_title DB "RSA", 0                    ; The MessageBox title.
@@ -195,7 +195,12 @@ rsa_is_prime:
         push    ebx                         ; Backup ebx on the stack.
         push    ecx                         ; Backup ecx on the stack.
         push    edx                         ; Backup edx on the stack.
-        push    eax                         ; Push argument n on the stack.
+        cmp     eax, 2                      ; Compare n with 2.
+        jb      rsa_is_prime_false          ; If n less than 2, return false.
+        je      rsa_is_prime_true           ; If n is 2, return true.
+        test    eax, 1                      ; Check lsb of n.
+        jz      rsa_is_prime_false          ; If n is even, return false.
+        push    eax                         ; Push n on the stack.
         fild    DWORD PTR [esp]             ; Move n from the stack to ST(0) in FPU.
         fsqrt                               ; Perform ST(0) = sqrt(ST(0)) in FPU.
         fistp   DWORD PTR [esp]             ; Move sqrt(n) from ST(0) to the stack.
@@ -211,6 +216,7 @@ rsa_is_prime_loop:
         sub     ecx, 2                      ; Decrease i by 2.
         cmp     ecx, 3                      ; Compare i with 3.
         jge     rsa_is_prime_loop           ; Repeat until i = 3.
+rsa_is_prime_true:
         mov     eax, 1                      ; Set return value to true.
         jmp     rsa_is_prime_end            ; Return.
 rsa_is_prime_false:
@@ -239,3 +245,4 @@ rsa_display_int:
         ret                                 ; Give control back to the caller.
 
 END start
+
