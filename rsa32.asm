@@ -7,10 +7,13 @@ TITLE RSA in MASM - Copyright (C) Fabio Banfi 2013-2026
 ;
 ; Then, compile and link:
 ; ml /c /coff rsa32.asm
-; link rsa32.obj kernel32.lib user32.lib msvcrt.lib /SUBSYSTEM:WINDOWS
+; link rsa32.obj kernel32.lib user32.lib msvcrt.lib /SUBSYSTEM:CONSOLE
 ;
 ; Or, minimally:
-; ml /c rsa32.asm && link rsa32 /SUBSYSTEM:WINDOWS
+; ml /c rsa32.asm && link rsa32 /SUBSYSTEM:CONSOLE
+
+; Uncomment to use MessageBoxA instead of WriteConsoleA to display the output:
+; MSGBOX EQU 1
 
 .686P
 .MODEL FLAT, STDCALL
@@ -23,11 +26,22 @@ INCLUDELIB msvcrt
 EXTERN wsprintfA:PROC
 
 ExitProcess PROTO STDCALL :DWORD
+IFDEF MSGBOX
 MessageBoxA PROTO STDCALL :DWORD, :DWORD, :DWORD, :DWORD
+ELSE
+STD_OUTPUT_HANDLE equ -11
+lstrlenA PROTO STDCALL :DWORD
+GetStdHandle PROTO STDCALL :DWORD
+WriteConsoleA PROTO STDCALL :DWORD, :DWORD, :DWORD, :DWORD, :DWORD
+ENDIF
 
 .DATA
 rsa_sz_title DB "RSA", 0                    ; The MessageBox title.
-rsa_sz_fmt db "%d", 0                       ; Format string for wsprintfA
+IFDEF MSGBOX
+rsa_sz_fmt db "%u", 0                       ; Format string for wsprintfA
+ELSE
+rsa_sz_fmt db "%u", 13, 10, 0               ; Format string for WriteConsoleA
+ENDIF
 
 .DATA?
 rsa_sz_text DB 32 DUP (?)                   ; The MessageBox message.
@@ -40,106 +54,93 @@ rsa_dw_d DD ?                               ; The private key d.
 ; Programs's entry point.
 start:
         call    rsa_init                    ; Initialize RSA data.
-        call    rsa_get_e                   ; Get public exponent e.
-        push    eax                         ; Push public exponent e on the stack.
-        call    rsa_get_n                   ; Get modulo n.
-        push    eax                         ; Push modulo n on the stack.
         push    42                          ; Push test number 42 on the stack.
         call    rsa_encrypt                 ; Encrypt 42.
         push    eax                         ; Push encrypted value on the stack.
         call    rsa_decrypt                 ; Decrypt encrypted value.
-        call    rsa_display_int             ; Display the decrypted value.
+        call    rsa_print_int               ; Display the decrypted value.
+        call    rsa_clear                   ; Clear RSA data.
         push    0                           ; Push argument of ExitProcess on the stack.
         call    ExitProcess                 ; Exit program.
 
-; Generate the public and private keys.
+; Generate public and private keys.
 rsa_init:
         pushad                              ; Backup all general purpose registers on the stack.
 rsa_init_gen_p:
-        rdtsc                               ; Get the cpu time stamp counter as random number.
+        rdtsc                               ; Get the cpu time stamp counter as random number on eax.
         or      eax, 1                      ; Make sure eax is odd.
-        and     eax, 0ffffh                 ; Bitmask to make sure p is smaller than 2 ^ 16, otherwise 32 bit overflow later.
+        and     eax, 0ffffh                 ; Bitmask to make sure p is smaller than 2^16, so that n is at most 32 bits.
         mov     ebx, eax                    ; Store p in ebx.
         call    rsa_is_prime                ; Check whether p is prime.
-        cmp     eax, 0                      ; Check whether primality test gave true or false.
-        je      rsa_init_gen_p              ; Loop until p is prime.
+        cmp     eax, 0                      ; Check whether primality test succeeded.
+        je      rsa_init_gen_p              ; Repeat until p is prime.
 rsa_init_gen_q:
-        rdtsc                               ; Get the cpu time stamp counter as random number.
+        rdtsc                               ; Get the cpu time stamp counter as random number on eax.
         or      eax, 1                      ; Make sure eax is odd.
-        and     eax, 0ffffh                 ; Bitmask to make sure p is smaller than 2 ^ 16, otherwise 32 bit overflow later.
+        and     eax, 0ffffh                 ; Bitmask to make sure q is smaller than 2^16, so that n is at most 32 bits.
         mov     ecx, eax                    ; Store q in ecx.
         call    rsa_is_prime                ; Check whether q is prime.
-        cmp     eax, 0                      ; Check whether primality test gave true or false.
-        je      rsa_init_gen_q              ; Loop until q is prime.
+        cmp     eax, 0                      ; Check whether primality test succeeded.
+        je      rsa_init_gen_q              ; Repeat until q is prime.
         mov     eax, ebx                    ; Copy p from ebx back to eax.
-        mul     ecx                         ; Multiply p by q in eax.
+        mul     ecx                         ; Multiply p by q and store result in eax.
         mov     [rsa_dw_n], eax             ; Save n = p * q to memory.
-        dec     ebx                         ; Set ebx to q - 1.
-        dec     ecx                         ; Set ecx to p - 1.
-        mov     eax, ebx                    ; Move q - 1 to accumulator.
-        mul     ecx                         ; Now eax contains t = (p - 1) * (q - 1).
-        mov     ebx, 65537                  ; 65537 is commonly used as public exponent due computational ease.
-        mov     ecx, eax                    ; Copy t to edi.
-        call    rsa_ext_euclid              ; Set m = e in ebx, n = t in eax and get inverse multiplicative d of e in eax.
+        dec     ebx                         ; Set ebx to p - 1.
+        dec     ecx                         ; Set ecx to q - 1.
+        mov     eax, ebx                    ; Move p - 1 to accumulator.
+        mul     ecx                         ; Now eax contains t = (p - 1) * (q - 1) = phi(n).
+        mov     ebx, 65537                  ; Use 65537 as public exponent e and store it in ebx.
+        mov     ecx, eax                    ; Copy t to ecx.
+        call    rsa_ext_euclid              ; Set m = e in ebx, n = t in eax and get multiplicative inverse d of e modulo t in eax.
         cmp     eax, 0                      ; Check whether d > 0.
         jg      rsa_init_end                ; If d > 0 there is no need to make it positive.
         add     eax, ecx                    ; Make sure d is positive, hence d := d + t.
 rsa_init_end:
-        mov     [rsa_dw_d], eax             ; Save d to memory.
         mov     [rsa_dw_e], 65537           ; Save e to memory.
+        mov     [rsa_dw_d], eax             ; Save d to memory.
         popad                               ; Restore all general purpose registers from the stack.
         ret                                 ; Give control back to the caller.
 
-; Clear the public and private keys.
+; Clear public and private keys.
 rsa_clear:
         mov     [rsa_dw_n], 0               ; Remove modulo n from memory.
         mov     [rsa_dw_e], 0               ; Remove public exponent e from memory.
         mov     [rsa_dw_d], 0               ; Remove private exponent d from memory.
         ret                                 ; Give control back to the caller.
 
-; Get modulo n.
-rsa_get_n:
-        mov     eax, [rsa_dw_n]             ; Copy modulo n from memory to eax.
-        ret                                 ; Give control back to the caller.
-
-; Get public exponent e.
-rsa_get_e:
-        mov     eax, [rsa_dw_e]             ; Copy public exponent e from memory to eax.
-        ret                                 ; Give control back to the caller.
-
-; Decrypt double word value, requires encrypted value v on the stack.
-rsa_decrypt:
-        push    ebp                         ; Save the old base pointer value.
-        mov     ebp, esp                    ; Set the new base pointer value.
-        push    ebx                         ; Backup ebx on the stack.
-        push    esi                         ; Backup esi on the stack.
-        mov     ebx, 8[ebp]                 ; Load v from the stack to register.
-        mov     ecx, [rsa_dw_d]             ; Load d from memory to register.
-        mov     esi, [rsa_dw_n]             ; Load n from memory to register.
-        call    rsa_mod_exp                 ; Perform (v ^ d) mod n.
-        pop     esi                         ; Restore esi from the stack.
-        pop     ebx                         ; Restore ebx from the stack.
-        mov     esp, ebp                    ; Deallocate local variables.
-        pop     ebp                         ; Restore the caller's base pointer value.
-        ret                                 ; Give control back to the caller.
-
-; Encrypt double word value, requires encrypted value v, modulo n and public exponent e on the stack.
+; Encrypt 32 bits message m.
 rsa_encrypt:
         push    ebp                         ; Save the old base pointer value.
         mov     ebp, esp                    ; Set the new base pointer value.
         push    ebx                         ; Backup ebx on the stack.
         push    esi                         ; Backup esi on the stack.
-        mov     ebx, 8[ebp]                 ; Load first argument  v from the stack to register.
-        mov     ecx, 16[ebp]                ; Load third argument e from the stack to register.
-        mov     esi, 12[ebp]                ; Load second argument n from the stack to register.
-        call    rsa_mod_exp                 ; Perform (v ^ e) mod n.
+        mov     ebx, 8[ebp]                 ; Load message m from the stack to register.
+        mov     esi, [rsa_dw_n]             ; Load n from memory to register.
+        mov     ecx, [rsa_dw_e]             ; Load e from memory to register.
+        call    rsa_mod_exp                 ; Compute m^e mod n.
         pop     esi                         ; Restore esi from the stack.
         pop     ebx                         ; Restore ebx from the stack.
         mov     esp, ebp                    ; Deallocate local variables.
         pop     ebp                         ; Restore the caller's base pointer value.
         ret                                 ; Give control back to the caller.
 
-; Modular exponentiation (eax = b ^ e mod m), requires b in ebx, e in ecx and m in esi.
+; Decrypt 32 bits ciphertext c.
+rsa_decrypt:
+        push    ebp                         ; Save the old base pointer value.
+        mov     ebp, esp                    ; Set the new base pointer value.
+        push    ebx                         ; Backup ebx on the stack.
+        push    esi                         ; Backup esi on the stack.
+        mov     ebx, 8[ebp]                 ; Load ciphertext c from the stack to register.
+        mov     esi, [rsa_dw_n]             ; Load n from memory to register.
+        mov     ecx, [rsa_dw_d]             ; Load d from memory to register.
+        call    rsa_mod_exp                 ; Compute c^d mod n.
+        pop     esi                         ; Restore esi from the stack.
+        pop     ebx                         ; Restore ebx from the stack.
+        mov     esp, ebp                    ; Deallocate local variables.
+        pop     ebp                         ; Restore the caller's base pointer value.
+        ret                                 ; Give control back to the caller.
+
+; Modular exponentiation (eax = b^e mod m), expects b in ebx, e in ecx and m in esi.
 rsa_mod_exp:
         push    edi                         ; Backup edi on the stack.
         mov     edi, 1                      ; Set c := 1.
@@ -163,7 +164,7 @@ rsa_mod_exp_skip:
         jmp     rsa_mod_exp_loop            ; Repeat.
 rsa_mod_exp_end:
         mov     eax, edi                    ; Move return value c to eax.
-        pop     edi                         ; Restore esi from the stack.
+        pop     edi                         ; Restore edi from the stack.
         ret                                 ; Give control back to the caller.
 
 ; Extended euclidean algorithm, find x, y (eax, ebx) given m, n (ebx, eax) s.t. m * x + n * y = gcd(m, n).
@@ -190,7 +191,7 @@ rsa_ext_euclid_end:
         pop     ecx                         ; Restore ecx from the stack.
         ret                                 ; Give control back to the caller.
 
-; Primality test for n odd and larger than 3 requires eax on stack, returns true of false in eax.
+; Primality test for n (eax) odd and larger than 3, returns true or false in eax.
 rsa_is_prime:
         push    ebx                         ; Backup ebx on the stack.
         push    ecx                         ; Backup ecx on the stack.
@@ -228,23 +229,34 @@ rsa_is_prime_end:
         ret                                 ; Give control back to the caller.
         
 ; Display content of eax as integer in a messagebox.
-rsa_display_int:
+rsa_print_int:
         pushad                              ; Backup all general purpose registers on the stack.
         push    eax                         ; Third argument of wsprintfA: number to be converted.
         push    offset rsa_sz_fmt           ; Second argument of wsprintfA: format string "%d".
         push    offset rsa_sz_text          ; First argument of wsprintfA: address of destination string.
         call    wsprintfA                   ; Convert eax to its string representation.
         add     esp, 12                     ; C calling convention, clean wsprintfA's stack.
+        IFDEF MSGBOX
         xor     eax, eax                    ; Set eax to 0.
         push    eax                         ; Push 0 as fourth argument of MessageBox on the stack.
         push    offset rsa_sz_title         ; Push rsa_sz_title address as third argument of MessageBox on the stack.
         push    offset rsa_sz_text          ; Push rsa_sz_text address as second argument of MessageBox on the stack.
         push    eax                         ; Push 0 as first argument of MessageBox on the stack.
         call    MessageBoxA                 ; Call window' MessageBox function.
+        ELSE
+        push    offset rsa_sz_text          ; Push address of string to be printed as second argument of WriteConsoleA on the stack.
+        call    lstrlenA                    ; Get the length of the string to be printed in eax.
+        mov     ecx, eax                    ; Copy the length of the string to ecx.
+        push    0                           ; Push 0 as fifth argument of WriteConsoleA on the stack, that is lpReserved which must be NULL.
+        push    0                           ; Push 0 as fourth argument of WriteConsoleA on the stack, that is lpNumberOfCharsWritten which must be NULL.
+        push    ecx                         ; Push the length of the string as third argument of WriteConsoleA on the stack, that is nNumberOfCharsToWrite.
+        push    offset rsa_sz_text          ; Push the address of the string as second argument of WriteConsoleA on the stack, that is lpBuffer.
+        push    -11                         ; Push -11 as first argument of WriteConsoleA on the stack, that is STD_OUTPUT_HANDLE.
+        call    GetStdHandle                ; Get the handle of the standard output device in eax.
+        push    eax                         ; Push the handle of the standard output device as first argument of WriteConsoleA on the stack.
+        call    WriteConsoleA               ; Call WriteConsoleA to print the string to the console.
+        ENDIF
         popad                               ; Restore all general purpose registers from the stack.
         ret                                 ; Give control back to the caller.
 
 END start
-
-
-
