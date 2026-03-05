@@ -3,7 +3,7 @@ TITLE RSA in MASM - Copyright (C) Fabio Banfi 2013-2026
 ; HOW TO RUN:
 ;
 ; First open the x86 Native Tools Command Prompt (requires installing x86/64 build tools from Visual Studio Installer):
-; cmd.exe /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars32.bat"
+; cmd /k "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars32.bat"
 ;
 ; Then, compile and link:
 ; ml /c /coff rsa32.asm
@@ -12,7 +12,7 @@ TITLE RSA in MASM - Copyright (C) Fabio Banfi 2013-2026
 ; Or, minimally:
 ; ml /c rsa32.asm && link rsa32 /SUBSYSTEM:CONSOLE
 
-; Uncomment to use MessageBoxA instead of WriteConsoleA to display the output:
+; Uncomment to use MessageBoxA instead of WriteConsoleA to display the output (use /SUBSYSTEM:WINDOWS):
 ; MSGBOX EQU 1
 
 .686P
@@ -260,3 +260,4 @@ rsa_print_int:
         ret                                 ; Give control back to the caller.
 
 END start
+
